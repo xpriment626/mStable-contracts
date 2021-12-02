@@ -25,7 +25,7 @@ import { verifyEtherscan } from "./utils/etherscan"
 task("integration-aave-deploy", "Deploys an instance of AaveV2Integration contract")
     .addParam(
         "asset",
-        "Symbol of the mAsset or Feeder Pool providing liquidity to the integration. eg mUSD, PmUSD, GUSD or alUSD",
+        "Symbol of the mAsset or Feeder Pool providing liquidity to the integration. eg mUSD, GUSD or alUSD",
         undefined,
         types.string,
     )
@@ -65,7 +65,7 @@ task("integration-aave-deploy", "Deploys an instance of AaveV2Integration contra
 task("integration-paave-deploy", "Deploys mUSD and mBTC instances of PAaveIntegration")
     .addParam(
         "asset",
-        "Symbol of the mAsset or Feeder Pool providing liquidity to the integration. eg mUSD, PmUSD, GUSD or alUSD",
+        "Symbol of the mAsset or Feeder Pool providing liquidity to the integration. eg mUSD, GUSD or alUSD",
         undefined,
         types.string,
     )
@@ -159,7 +159,7 @@ task("liquidator-deploy").setAction(async (_, __, runSuper) => {
 })
 
 subtask("liquidator-create", "Creates a liquidation of a platform reward")
-    .addParam("asset", "Symbol of the mAsset or Feeder Pool. eg mUSD, PmUSD, mBTC, alUSD, HBTC", undefined, types.string)
+    .addParam("asset", "Symbol of the mAsset or Feeder Pool. eg mUSD, mBTC, alUSD, HBTC", undefined, types.string)
     .addParam("rewardToken", "Symbol of the platform reward token. eg COMP, AAVE, stkAAVE, ALCX", undefined, types.string)
     .addParam("bAsset", "Symbol of the bAsset purchased from the rewards. eg USDC, WBTC, alUSD", undefined, types.string)
     .addOptionalParam("maxAmount", "Max amount of bAssets to liquidate. 20,000 USDC from selling COMP", undefined, types.int)

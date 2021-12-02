@@ -340,18 +340,8 @@ task("feeder-redeem", "Redeem some Feeder Pool tokens")
     })
 
 task("feeder-swap", "Swap some Feeder Pool tokens")
-    .addParam(
-        "input",
-        "Token symbol of the input token to the swap. eg mUSD, PmUSD, mBTC, HBTC, GUSD, PFRAX or alUSD",
-        undefined,
-        types.string,
-    )
-    .addParam(
-        "output",
-        "Token symbol of the output token from the swap. eg mUSD, PmUSD, mBTC, HBTC, GUSD, PFRAX or alUSD",
-        undefined,
-        types.string,
-    )
+    .addParam("input", "Token symbol of the input token to the swap. eg mUSD, mBTC, HBTC, GUSD, FRAX or alUSD", undefined, types.string)
+    .addParam("output", "Token symbol of the output token from the swap. eg mUSD, mBTC, HBTC, GUSD, FRAX or alUSD", undefined, types.string)
     .addParam("amount", "Amount of input tokens to swap", undefined, types.float)
     .addOptionalParam("speed", "Defender Relayer speed param: 'safeLow' | 'average' | 'fast' | 'fastest'", "fast", types.string)
     .setAction(async (taskArgs, hre) => {
@@ -401,8 +391,8 @@ task("feeder-collect-interest", "Collects and interest from feeder pools")
         const lastBatchDate = new Date(lastBatchCollected.mul(1000).toNumber())
         console.log(`The last interest collection was ${lastBatchDate.toUTCString()}, epoch ${lastBatchCollected} seconds`)
 
-        const currentEpoc = new Date().getTime() / 1000
-        if (currentEpoc - lastBatchCollected.toNumber() < 60 * 60 * 12) {
+        const currentEpoch = new Date().getTime() / 1000
+        if (currentEpoch - lastBatchCollected.toNumber() < 60 * 60 * 12) {
             console.error(`Can not run again as the last run was less then 12 hours ago`)
             process.exit(3)
         }
