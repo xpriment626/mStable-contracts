@@ -10,7 +10,7 @@ import { StableMath } from "../shared/StableMath.sol";
 import { IERC4626Vault } from "./IERC4626Vault.sol";
 
 /**
- * @title   Vault of Yield Bearing Vaultss
+ * @title   Vault of Yield Bearing Vaults with single underlying asset.
  * @author  mStable
  * @notice  
  * @dev     VERSION: 1.0
@@ -27,16 +27,22 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
 
     /// @notice The current exchange rate of shares to assets, quoted per unit share (share unit is 10 ** Vault.decimals()).
     uint256 public override assetsPerShare;
+    //// @notice Maximum number of a underlying assets this vault can take on deposit
+    uint256 public assetsCap;
 
     // TODO A array of 16 weights of size 16 bits.
     // uint256 weights = ;
 
-    // TODO move into an immutable byte array
+    // TODO move into an immutable bytes to save an extra storage read
     IERC4626Vault[UNDERLYING_VAULT_COUNT] public underlyingVaults;
+    // can fit 3 x 20 bytes addresses (60 bytes) in 2 x 32 bytes
+    // bytes32 private immutable underlyingVaultsBytes1;
+    // bytes32 private immutable underlyingVaultsBytes2;
 
     event Deposit(address caller, address receiver, uint256 assets, uint256 shares);
     event Withdraw(address owner, address receiver, uint256 assets, uint256 shares);
     event AssetsPerShareUpdated(uint256 assetsPerShare);
+    event AssetsCapUpdated(uint256 assetCap);
     
     constructor(
         address _nexus,
@@ -52,7 +58,9 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
         }
     }
 
-    function initialize() external initializer {
+    function initialize(uint256 _assetsCap) external initializer {
+        assetsCap = _assetsCap;
+
         // For each underlying vault
         for (uint256 i = 0; i < UNDERLYING_VAULT_COUNT; i++) {
             // Approce the underlying vaults to transfer assets from this vault of vaults.
@@ -75,7 +83,7 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      * @param depositor Owner of the shares.
      * @return assets The amount of underlying assets the depositor owns in the vault.
      */
-    function assetsOf(address depositor) external override view returns (uint256 assets) {
+    function assetsOf(address depositor) public override view returns (uint256 assets) {
         assets = balanceOf(depositor) * assetsPerShare;
     }
 
@@ -84,29 +92,24 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      * @param caller Account that the assets will be transferred from.
      * @return maxAssets The maximum amount of underlying assets the caller can deposit.
      */
-    function maxDeposit(address caller) external override pure returns (uint256 maxAssets) {
-        maxAssets = type(uint256).max;
+    function maxDeposit(address caller) external override view returns (uint256 maxAssets) {
+        (maxAssets, ) = _maxAssets();
     }
 
     /**
      * @notice Allows an on-chain or off-chain user to simulate the effects of their deposit at the current block, given current on-chain conditions.
+     * @dev Does not revert if the number of assets being deposited is greater than the max number of assets that can be deposited.
      * @param assets The amount of underlying assets to be transferred.
      * @return shares The amount of vault shares that will be minted.
      */
     function previewDeposit(uint256 assets) external override view returns (uint256 shares) {
         // TODO what if the underlying vault charges a deposit fee? The number of assets in won't equal the number of assets redeemable.
-
-        // Get the current asset totals from the underlying vaults
-        uint256 newTotalAssets = totalAssets();
-        uint256 totalShares = totalSupply();
-
-        // shares per asset = total shares / total assets
-        // new shares = total shares / total assets * new assets
-        shares = assets * newTotalAssets / totalShares;
+        shares = _calcSharesFromAssets(assets);
     }
 
     /**
      * @notice Mint vault shares to receiver by transferring exact amount of underlying asset tokens from the caller.
+     * @dev Will revert if the number of assets being deposited is greater than the max number of assets that can be deposited.
      * @param assets The amount of underlying assets to be transferred to the vault.
      * @param receiver The account that the vault shares will be minted to.
      * @return shares The amount of vault shares that were minted.
@@ -116,6 +119,9 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
 
         // Get the asset totals before new deposits
         (, uint256 totalAssetsBefore, uint256 totalSharesBefore) = _updateAssetsPerShares();
+
+        // Deposited assets must fit within the vault's underlying assets limit
+        require(assetsCap - totalAssetsBefore >= assets, "Asset cap");
 
         // shares per asset = total shares / total assets
         // new shares = total shares / total assets * new assets
@@ -129,8 +135,11 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      * @param caller Account that the underlying assets will be transferred from.
      * @return maxShares The maximum amount of vault shares the caller can mint.
      */
-    function maxMint(address caller) external override pure returns (uint256 maxShares) {
-        maxShares = type(uint256).max;
+    function maxMint(address caller) external override view returns (uint256 maxShares) {
+        (uint256 maxAssets,  uint256 currentTotalAssets) = _maxAssets();
+
+        uint256 totalShares = totalSupply();
+        maxShares = maxAssets * totalShares / currentTotalAssets;
     }
 
     /**
@@ -144,6 +153,7 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
 
     /**
      * @notice Mint exact amount of vault shares to the receiver by transferring enough underlying asset tokens from the caller.
+     * @dev Will revert if the number of assets being deposited is greater than the max number of assets that can be deposited.
      * @param shares The amount of vault shares to be minted.
      * @param receiver The account the vault shares will be minted to.
      * @return assets The amount of underlying assets that were transferred from the caller.
@@ -151,10 +161,13 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
     function mint(uint256 shares, address receiver) external override returns (uint256 assets) {
         require(receiver != address(0), "Receiver is zero");
 
-        // Get the new assets per share ration
-        (uint256 newAssetsPerShare, , ) = _updateAssetsPerShares();
+        // Get the new assets per share ratio
+        (uint256 newAssetsPerShare, uint256 totalAssetsBefore, ) = _updateAssetsPerShares();
 
         assets = shares.mulTruncate(newAssetsPerShare);
+
+        // Deposited assets must fit within the vault's underlying assets limit
+        require(assetsCap - totalAssetsBefore >= assets, "Asset cap");
 
         _transferDepositMint(assets, shares, receiver);
     }
@@ -165,6 +178,7 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      * @return maxAssets The maximum amount of underlying assets the owner can withdraw.
      */
     function maxWithdraw(address owner) external override view returns (uint256 maxAssets) {
+        maxAssets = assetsOf(owner);
     }
 
     /**
@@ -173,6 +187,7 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      * @return shares The amount of vault shares that will be burnt.
      */
     function previewWithdraw(uint256 assets) external override view returns (uint256 shares) {
+        shares = _calcSharesFromAssets(assets);
     }
 
     /**
@@ -200,6 +215,7 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      * @return maxAssets The maximum amount of underlying assets the owner can withdraw.
      */
     function maxRedeem(address owner) external override view returns (uint256 maxAssets) {
+        maxAssets = balanceOf(owner);
     }
 
     /**
@@ -220,13 +236,17 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
      */
     function redeem(uint256 shares, address receiver, address owner) external override returns (uint256 assets) {
 
-        // Get the new assets per share ration
+        // Get the new assets per share ratio
         (uint256 newAssetsPerShare, , ) = _updateAssetsPerShares();
 
         assets = shares.mulTruncate(newAssetsPerShare);
 
         _withdrawBurnTransfer(assets, shares, owner, receiver);
     }
+
+    /***************************************
+                    Internal
+    ****************************************/
 
     function _transferDepositMint(uint256 assets, uint256 shares, address receiver) internal {
         // Transfer in the assets to this vault from the sender
@@ -268,6 +288,26 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
         _burn(owner, shares);
     }
 
+    /**
+     * @notice Calculates the current maximum amount of underlying assets that can be deposited into the vault.
+     */
+    function _maxAssets() internal view returns (uint256 maxAssets, uint256 currentTotalAssets) {
+        currentTotalAssets = totalAssets();
+
+        // If already over limit then max is zero
+        maxAssets = assetsCap > currentTotalAssets ? assetsCap - currentTotalAssets : 0;
+    }
+
+    function _calcSharesFromAssets(uint256 assets) internal view returns (uint256 shares) {
+        // Get the current asset totals from the underlying vaults
+        uint256 newTotalAssets = totalAssets();
+        uint256 totalShares = totalSupply();
+
+        // shares per asset = total shares / total assets
+        // new shares = new assets * total shares / total assets
+        shares = assets * totalShares / newTotalAssets;
+    }
+
     function _calcAssetsFromShares(uint256 shares) internal view returns (uint256 assets) {
         uint256 newTotalAssets = totalAssets();
         uint256 totalShares = totalSupply();
@@ -286,7 +326,6 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
 
         newAssetsPerShare = _calculateAssetsPerShare(newTotalAssets, totalShares);
 
-        // TODO should we only update if the new value is different to the old value?
         // Store new assertsPerShare in contract storage
         assetsPerShare = newAssetsPerShare;
 
@@ -305,4 +344,13 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
         _assetsPerShare = _totalAssets.divPrecisely(_totalShares - 1);
     }
 
+    /***************************************
+                    Admin
+    ****************************************/
+
+    function setAssetCap(uint256 _assetCap) external onlyGovernor {
+        assetsCap = _assetCap;
+
+        emit AssetsCapUpdated(_assetCap);
+    }
 }
