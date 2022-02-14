@@ -267,6 +267,15 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
 
     function _withdrawBurnTransfer(uint256 assets, uint256 shares, address owner, address receiver) internal {
 
+        // If caller is not the owner of the shares
+        uint256 allowed = allowance(owner, msg.sender); // Saves gas for limited approvals.
+        if (msg.sender != owner && allowed != type(uint256).max) {
+            _approve(owner, msg.sender, allowed - shares);
+        }
+
+        // Burn shares from the owner
+        _burn(owner, shares);
+
         // Get the proportions of assets across the underlying vaults before the withdraw
         uint256 totalAssetsBefore;
         uint256[] memory vaultsAssets = new uint256[](UNDERLYING_VAULT_COUNT);
@@ -283,9 +292,6 @@ contract VaultOfVaults is Initializable, ImmutableModule, InitializableToken, IE
         }
 
         emit Withdraw(owner, receiver, assets, shares);
-
-        // Burn shares from the owner
-        _burn(owner, shares);
     }
 
     /**
