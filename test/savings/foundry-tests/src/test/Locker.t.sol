@@ -198,6 +198,7 @@ contract LockerTest is DSTest {
 
         // Warps time forward to surpass lock duration
         uint256 _timeIn = locker.timeIn();
+        // Apprx. 6 months in days
         hack.warp(_timeIn + 185 days);
         uint256 creditWithdrawal = 500;
         uint256 returned = locker.withdraw(creditWithdrawal);
